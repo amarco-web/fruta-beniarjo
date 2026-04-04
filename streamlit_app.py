@@ -3,7 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. TRADUCCIONS (Interfície multilingüe)
+# 1. TRADUCCIONS (Interfície multilingüe -> Dades en Castellà)
 traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
@@ -15,7 +15,8 @@ traduccions = {
         "kg_disponibles": "Kg disponibles en cambra:",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "botó_volcar": "🚜 REGISTRAR VOLCAT",
-        "exit": "✅ Registrat correctament en el Google Sheets"
+        "exit": "✅ Registrat correctament!",
+        "error_sheet": "Error de connexió amb el full de càlcul."
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
@@ -27,7 +28,8 @@ traduccions = {
         "kg_disponibles": "Kg disponibles en cámara:",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "botó_volcar": "🚜 REGISTRAR VOLCADO",
-        "exit": "✅ Registrado correctamente en el Google Sheets"
+        "exit": "✅ ¡Registrado correctamente!",
+        "error_sheet": "Error de conexión con la hoja de cálculo."
     },
     "Română": {
         "titol": "🟣 Controlul Maracuja - Mirna",
@@ -39,11 +41,12 @@ traduccions = {
         "kg_disponibles": "Kg disponibile în depozit:",
         "botó_guardar": "💾 SALVEAZĂ INTRAREA",
         "botó_volcar": "🚜 ÎNREGISTREAZĂ DESCĂRCAREA",
-        "exit": "✅ Înregistrat cu succes în Google Sheets"
+        "exit": "✅ Înregistrat cu succes!",
+        "error_sheet": "Eroare de conexiune cu tabelul Google."
     }
 }
 
-# 2. Dades de finques
+# 2. DADES DE FINQUES I PARCEL·LES
 dades_fincas = {
     "Cooperativa": ["Eloy", "Santi", "Toni", "Neus", "Jesus"],
     "Tarraso": ["Alvocat", "Germana Cando", "Dalt Casa", "Casa"],
@@ -51,9 +54,9 @@ dades_fincas = {
     "Marapego": ["Lanelate", "Murcott", "Ortanique"]
 }
 
-st.set_page_config(page_title="Maracuia Beniarjó", page_icon="🟣")
+st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
 
-# CONNEXIÓ AMB GOOGLE SHEETS
+# 3. CONNEXIÓ AMB GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # SELECTOR D'IDIOMA
@@ -64,8 +67,12 @@ t = traduccions[idioma]
 st.title(t["titol"])
 opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], t["menu_volcat"]])
 
-# LLEGIR DADES ACTUALS PER A CÀLCULS D'STOCK
-df_actual = conn.read()
+# LLEGIR DADES (Pestanya "Full 1")
+try:
+    df_actual = conn.read(worksheet="Full 1", ttl=0)
+    df_actual = df_actual.dropna(how="all")
+except Exception:
+    df_actual = pd.DataFrame(columns=["Fecha", "Finca", "Parcela", "Tipo", "Kg", "Cajas", "ID_Lote", "Ref_Original"])
 
 # --- SECCIÓ 1: ENTRADA DE CAMP ---
 if opcio == t["menu_entrada"]:
@@ -73,71 +80,70 @@ if opcio == t["menu_entrada"]:
     finca_sel = st.selectbox(t["tria_finca"], list(dades_fincas.keys()))
     parcela_sel = st.selectbox(t["tria_parcela"], dades_fincas[finca_sel])
     
-    with st.form("form_entrada"):
+    with st.form("form_entrada", clear_on_submit=True):
         col1, col2 = st.columns(2)
         kg = col1.number_input("Kg:", min_value=0.0, step=0.1)
         cajas = col2.number_input("Cajas:", min_value=0)
         submit = st.form_submit_button(t["botó_guardar"])
         
         if submit:
-            # Generar ID de Lot
             id_lote = f"{datetime.now().strftime('%Y%m%d')}-{finca_sel[:3].upper()}-{parcela_sel[:3].upper()}"
-            
-            # Crear nova fila
             nova_fila = pd.DataFrame([{
                 "Fecha": datetime.now().strftime("%d/%m/%Y"),
                 "Finca": finca_sel,
                 "Parcela": parcela_sel,
-                "Tipo": "Campo",
+                "Tipo": "Campo", # Sempre en Castellà per a l'equip d'Andalusia/Euskadi
                 "Kg": kg,
                 "Cajas": cajas,
                 "ID_Lote": id_lote,
                 "Ref_Original": ""
             }])
-            
-            # Unir dades i guardar
             df_final = pd.concat([df_actual, nova_fila], ignore_index=True)
-            conn.update(data=df_final)
+            conn.update(worksheet="Full 1", data=df_final)
             st.success(t["exit"])
             st.balloons()
+            st.cache_data.clear()
 
-# --- SECCIÓ 2: VOLCAT (Lògica de Traçabilitat) ---
+# --- SECCIÓ 2: VOLCAT (TRAÇABILITAT) ---
 elif opcio == t["menu_volcat"]:
     st.header(t["menu_volcat"])
     
-    # Calcular stock per cada ID_Lote
     if not df_actual.empty:
-        # Sumem Campo i restem Recogido per a cada lot
+        # Lògica d'Stock: Campo - Recogido
         campo = df_actual[df_actual['Tipo'] == 'Campo'].groupby('ID_Lote')['Kg'].sum()
         recollit = df_actual[df_actual['Tipo'] == 'Recogido'].groupby('Ref_Original')['Kg'].sum()
         stock = campo.subtract(recollit, fill_value=0)
-        
-        # Filtrar només els que tenen stock > 0
-        lots_amb_stock = stock[stock > 0]
+        lots_amb_stock = stock[stock > 0.1]
         
         if not lots_amb_stock.empty:
             lot_triat = st.selectbox(t["tria_lot"], lots_amb_stock.index)
-            st.metric(t["kg_disponibles"], f"{lots_amb_stock[lot_triat]} Kg")
+            st.metric(t["kg_disponibles"], f"{round(lots_amb_stock[lot_triat], 2)} Kg")
             
-            with st.form("form_volcat"):
+            with st.form("form_volcat", clear_on_submit=True):
                 kg_volcat = st.number_input("Kg a bolcar:", min_value=0.0, max_value=float(lots_amb_stock[lot_triat]))
                 submit_v = st.form_submit_button(t["botó_volcar"])
                 
                 if submit_v:
-                    # Crear fila "Recogido" vinculada al lot original
+                    # Busquem dades originals del lot
+                    orig = df_actual[df_actual['ID_Lote'] == lot_triat].iloc[0]
                     fila_v = pd.DataFrame([{
                         "Fecha": datetime.now().strftime("%d/%m/%Y"),
-                        "Finca": df_actual[df_actual['ID_Lote'] == lot_triat]['Finca'].values[0],
-                        "Parcela": df_actual[df_actual['ID_Lote'] == lot_triat]['Parcela'].values[0],
-                        "Tipo": "Recogido",
+                        "Finca": orig['Finca'],
+                        "Parcela": orig['Parcela'],
+                        "Tipo": "Recogido", # Sempre en Castellà
                         "Kg": kg_volcat,
                         "Cajas": 0,
                         "ID_Lote": f"VOL-{datetime.now().strftime('%H%M%S')}",
                         "Ref_Original": lot_triat
                     }])
                     df_final = pd.concat([df_actual, fila_v], ignore_index=True)
-                    conn.update(data=df_final)
+                    conn.update(worksheet="Full 1", data=df_final)
                     st.success(t["exit"])
+                    st.cache_data.clear()
+        else:
+            st.warning("No hi ha lots pendents en la cambra.")
+    else:
+        st.info("Encara no hi ha dades registrades.")
         else:
             st.warning("No hi ha lots pendents en la cambra.")
     else:
