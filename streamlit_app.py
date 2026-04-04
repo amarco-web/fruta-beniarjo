@@ -15,8 +15,7 @@ traduccions = {
         "kg_disponibles": "Kg disponibles en cambra:",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "botó_volcar": "🚜 REGISTRAR VOLCAT",
-        "exit": "✅ Registrat correctament!",
-        "no_lots": "No hi ha lots pendents en la cambra."
+        "exit": "✅ Registrat correctament!"
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
@@ -28,8 +27,7 @@ traduccions = {
         "kg_disponibles": "Kg disponibles en cámara:",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "botó_volcar": "🚜 REGISTRAR VOLCADO",
-        "exit": "✅ ¡Registrado correctamente!",
-        "no_lots": "No hay lotes pendientes en la cámara."
+        "exit": "✅ ¡Registrado correctamente!"
     },
     "Română": {
         "titol": "🟣 Controlul Maracuja - Mirna",
@@ -41,12 +39,10 @@ traduccions = {
         "kg_disponibles": "Kg disponibile în depozit:",
         "botó_guardar": "💾 SALVEAZĂ INTRAREA",
         "botó_volcar": "🚜 ÎNREGISTREAZĂ DESCĂRCAREA",
-        "exit": "✅ Înregistrat cu succes!",
-        "no_lots": "Nu există loturi în depozit."
+        "exit": "✅ Înregistrat cu succes!"
     }
 }
 
-# 2. CONFIGURACIÓ DE FINQUES
 dades_fincas = {
     "Cooperativa": ["Eloy", "Santi", "Toni", "Neus", "Jesus"],
     "Tarraso": ["Alvocat", "Germana Cando", "Dalt Casa", "Casa"],
@@ -54,27 +50,27 @@ dades_fincas = {
     "Marapego": ["Lanelate", "Murcott", "Ortanique"]
 }
 
-st.set_page_config(page_title="Maracuia Beniarjó", page_icon="🟣", layout="centered")
+st.set_page_config(page_title="Maracuia Beniarjó", page_icon="🟣")
 
-# 3. CONNEXIÓ
+# CONNEXIÓ (Amb la ID del full directament)
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 4. SELECTOR D'IDIOMA
-st.sidebar.title("🌍 Idioma / Limbă")
+st.sidebar.title("🌍 Idioma")
 idioma = st.sidebar.selectbox("", ["Valencià", "Castellano", "Română"])
 t = traduccions[idioma]
 
 st.title(t["titol"])
 opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], t["menu_volcat"]])
 
-# 5. LLEGIR DADES
+# LLEGIR DADES
 try:
-    df_actual = conn.read(worksheet="Full 1", ttl=0)
+    # Usem la ID que surt a la teva URL
+    df_actual = conn.read(spreadsheet="https://docs.google.com/spreadsheets/d/1W2f64UXUzdRB2Ib-oVQH2D_hJURiQALGz_XNdUF95zE", worksheet="Full 1", ttl=0)
     df_actual = df_actual.dropna(how="all")
-except Exception:
+except Exception as e:
+    st.error(f"Error: {e}")
     df_actual = pd.DataFrame(columns=["Fecha", "Finca", "Parcela", "Tipo", "Kg", "Cajas", "ID_Lote", "Ref_Original"])
 
-# --- SECCIÓ 1: ENTRADA DE CAMP ---
 if opcio == t["menu_entrada"]:
     st.header(t["menu_entrada"])
     finca_sel = st.selectbox(t["tria_finca"], list(dades_fincas.keys()))
@@ -99,11 +95,11 @@ if opcio == t["menu_entrada"]:
                 "Ref_Original": ""
             }])
             df_final = pd.concat([df_actual, nova_fila], ignore_index=True)
-            conn.update(worksheet="Full 1", data=df_final)
+            # GUARDAR
+            conn.update(spreadsheet="https://docs.google.com/spreadsheets/d/1W2f64UXUzdRB2Ib-oVQH2D_hJURiQALGz_XNdUF95zE", worksheet="Full 1", data=df_final)
             st.success(t["exit"])
             st.cache_data.clear()
 
-# --- SECCIÓ 2: VOLCAT (TRAÇABILITAT) ---
 elif opcio == t["menu_volcat"]:
     st.header(t["menu_volcat"])
     if not df_actual.empty:
@@ -113,39 +109,27 @@ elif opcio == t["menu_volcat"]:
         lots_amb_stock = stock[stock > 0.1]
         
         if not lots_amb_stock.empty:
-            llista_opcions = {}
-            for id_lote in lots_amb_stock.index:
-                filtre = df_actual[df_actual['ID_Lote'] == id_lote]
-                if not filtre.empty:
-                    info = filtre.iloc[0]
-                    label = f"{id_lote} | {info['Finca']} | {info['Parcela']}"
-                    llista_opcions[label] = id_lote
-
-            opcio_triada = st.selectbox(t["tria_lot"], list(llista_opcions.keys()))
-            lot_id = llista_opcions[opcio_triada]
-            st.metric(t["kg_disponibles"], f"{round(lots_amb_stock[lot_id], 2)} Kg")
+            lot_triat = st.selectbox(t["tria_lot"], lots_amb_stock.index)
+            st.metric(t["kg_disponibles"], f"{round(lots_amb_stock[lot_triat], 2)} Kg")
             
             with st.form("form_volcat", clear_on_submit=True):
-                kg_volcat = st.number_input("Kg a bolcar:", min_value=0.0, max_value=float(lots_amb_stock[lot_id]))
-                if st.form_submit_button(t["botó_volcar"]):
-                    orig_filtre = df_actual[df_actual['ID_Lote'] == lot_id]
-                    if not orig_filtre.empty:
-                        orig = orig_filtre.iloc[0]
-                        fila_v = pd.DataFrame([{
-                            "Fecha": datetime.now().strftime("%d/%m/%Y"),
-                            "Finca": orig['Finca'],
-                            "Parcela": orig['Parcela'],
-                            "Tipo": "Recogido",
-                            "Kg": kg_volcat,
-                            "Cajas": 0,
-                            "ID_Lote": f"VOL-{datetime.now().strftime('%H%M%S')}",
-                            "Ref_Original": lot_id
-                        }])
-                        df_final = pd.concat([df_actual, fila_v], ignore_index=True)
-                        conn.update(worksheet="Full 1", data=df_final)
-                        st.success(t["exit"])
-                        st.cache_data.clear()
+                kg_volcat = st.number_input("Kg a bolcar:", min_value=0.0, max_value=float(lots_amb_stock[lot_triat]))
+                submit_v = st.form_submit_button(t["botó_volcar"])
+                if submit_v:
+                    orig = df_actual[df_actual['ID_Lote'] == lot_triat].iloc[0]
+                    fila_v = pd.DataFrame([{
+                        "Fecha": datetime.now().strftime("%d/%m/%Y"),
+                        "Finca": orig['Finca'],
+                        "Parcela": orig['Parcela'],
+                        "Tipo": "Recogido",
+                        "Kg": kg_volcat,
+                        "Cajas": 0,
+                        "ID_Lote": f"VOL-{datetime.now().strftime('%H%M%S')}",
+                        "Ref_Original": lot_triat
+                    }])
+                    df_final = pd.concat([df_actual, fila_v], ignore_index=True)
+                    conn.update(spreadsheet="https://docs.google.com/spreadsheets/d/1W2f64UXUzdRB2Ib-oVQH2D_hJURiQALGz_XNdUF95zE", worksheet="Full 1", data=df_final)
+                    st.success(t["exit"])
+                    st.cache_data.clear()
         else:
-            st.warning(t["no_lots"])
-    else:
-        st.info("No hi ha dades al registre.")
+            st.warning("No hi ha lots pendents.")
