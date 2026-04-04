@@ -3,7 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. DICCIONARI DE TRADUCCIONS (Interfície multilingüe -> Dades en Castellà)
+# 1. DICCIONARI DE TRADUCCIONS
 traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
@@ -54,19 +54,98 @@ dades_fincas = {
     "Marapego": ["Lanelate", "Murcott", "Ortanique"]
 }
 
-# 3. CONFIGURACIÓ PÀGINA
 st.set_page_config(page_title="Maracuia Beniarjó", page_icon="🟣", layout="centered")
 
-# 4. CONNEXIÓ GOOGLE SHEETS
+# 3. CONNEXIÓ
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# 5. SELECTOR D'IDIOMA (Barra lateral)
+# 4. SELECTOR D'IDIOMA
 st.sidebar.title("🌍 Idioma / Limbă")
 idioma = st.sidebar.selectbox("", ["Valencià", "Castellano", "Română"])
 t = traduccions[idioma]
 
 st.title(t["titol"])
+opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], t["menu_volcat"]])
+
+# 5. LLEGIR DADES
+try:
+    df_actual = conn.read(worksheet="Full 1", ttl=0)
+    df_actual = df_actual.dropna(how="all")
+except Exception:
+    df_actual = pd.DataFrame(columns=["Fecha", "Finca", "Parcela", "Tipo", "Kg", "Cajas", "ID_Lote", "Ref_Original"])
+
+# --- SECCIÓ 1: ENTRADA DE CAMP ---
+if opcio == t["menu_entrada"]:
+    st.header(t["menu_entrada"])
+    finca_sel = st.selectbox(t["tria_finca"], list(dades_fincas.keys()))
+    parcela_sel = st.selectbox(t["tria_parcela"], dades_fincas[finca_sel])
+    
+    with st.form("form_entrada", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        kg = col1.number_input("Kg:", min_value=0.0, step=0.1)
+        cajas = col2.number_input("Cajas:", min_value=0)
+        submit = st.form_submit_button(t["botó_guardar"])
+        
+        if submit:
+            id_lote = f"{datetime.now().strftime('%Y%m%d')}-{finca_sel[:3].upper()}-{parcela_sel[:3].upper()}"
+            nova_fila = pd.DataFrame([{
+                "Fecha": datetime.now().strftime("%d/%m/%Y"),
+                "Finca": finca_sel,
+                "Parcela": parcela_sel,
+                "Tipo": "Campo",
+                "Kg": kg,
+                "Cajas": cajas,
+                "ID_Lote": id_lote,
+                "Ref_Original": ""
+            }])
+            df_final = pd.concat([df_actual, nova_fila], ignore_index=True)
+            conn.update(worksheet="Full 1", data=df_final)
+            st.success(t["exit"])
+            st.cache_data.clear()
+
+# --- SECCIÓ 2: VOLCAT (TRAÇABILITAT) ---
+elif opcio == t["menu_volcat"]:
+    st.header(t["menu_volcat"])
+    if not df_actual.empty:
+        campo = df_actual[df_actual['Tipo'] == 'Campo'].groupby('ID_Lote')['Kg'].sum()
+        recollit = df_actual[df_actual['Tipo'] == 'Recogido'].groupby('Ref_Original')['Kg'].sum()
+        stock = campo.subtract(recollit, fill_value=0)
+        lots_amb_stock = stock[stock > 0.1]
+        
+        if not lots_amb_stock.empty:
+            llista_opcions = {}
+            for id_lote in lots_amb_stock.index:
+                filtre = df_actual[df_actual['ID_Lote'] == id_lote]
+                if not filtre.empty:
+                    info = filtre.iloc[0]
+                    label = f"{id_lote} | {info['Finca']} | {info['Parcela']}"
+                    llista_opcions[label] = id_lote
+
+            opcio_triada = st.selectbox(t["tria_lot"], list(llista_opcions.keys()))
+            lot_id = llista_opcions[opcio_triada]
+            st.metric(t["kg_disponibles"], f"{round(lots_amb_stock[lot_id], 2)} Kg")
+            
+            with st.form("form_volcat", clear_on_submit=True):
+                kg_volcat = st.number_input("Kg a bolcar:", min_value=0.0, max_value=float(lots_amb_stock[lot_id]))
+                if st.form_submit_button(t["botó_volcar"]):
+                    orig_filtre = df_actual[df_actual['ID_Lote'] == lot_id]
+                    if not orig_filtre.empty:
+                        orig = orig_filtre.iloc[0]
+                        fila_v = pd.DataFrame([{
+                            "Fecha": datetime.now().strftime("%d/%m/%Y"),
+                            "Finca": orig['Finca'],
+                            "Parcela": orig['Parcela'],
+                            "Tipo": "Recogido",
+                            "Kg": kg_volcat,
+                            "Cajas": 0,
+                            "ID_Lote": f"VOL-{datetime.now().strftime('%H%M%S')}",
+                            "Ref_Original": lot_id
+                        }])
+                        df_final = pd.concat([df_actual, fila_v], ignore_index=True)
+                        conn.update(worksheet="Full 1", data=df_final)
+                        st.success(t["exit"])
+                        st.cache_data.clear()
         else:
-            st.warning("No hi ha lots pendents en la cambra.")
+            st.warning(t["no_lots"])
     else:
-        st.error("La base de dades està buida.")
+        st.info("No hi ha dades al registre.")
