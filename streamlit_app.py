@@ -8,15 +8,15 @@ URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbxwgSEzm3LBQ-ss2Ps_xu
 SHEET_ID = "1W2f64UXUzdRB2Ib-oVQH2D_hJURiQALGz_XNdUF95zE"
 URL_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 
-# 2. TRADUCCIONS MILLORADES
+# 2. TRADUCCIONS
 traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
         "menu_entrada": "Registrar Entrada Camp",
-        "menu_volcat": "Volcat / Confecció",
-        "hui": "📋 Entrades registrades hui:",
-        "enters": "Kg (Enters)",
-        "decimals": "Kg (Decimals)",
+        "hui": "📋 Entrades de hui:",
+        "kg_label": "Pes total (Kg):",
+        "enters": "Enters",
+        "decimals": "Decimals",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "exit": "✅ Registrat correctament!",
         "cap_dada": "Encara no s'ha registrat res hui."
@@ -24,10 +24,10 @@ traduccions = {
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
         "menu_entrada": "Registrar Entrada Campo",
-        "menu_volcat": "Volcado / Confección",
-        "hui": "📋 Entradas registradas hoy:",
-        "enters": "Kg (Enteros)",
-        "decimals": "Kg (Decimales)",
+        "hui": "📋 Entradas de hoy:",
+        "kg_label": "Peso total (Kg):",
+        "enters": "Enteros",
+        "decimals": "Decimales",
         "botó_guardar": "💾 GUARDAR ENTRADA",
         "exit": "✅ ¡Registrado correctamente!",
         "cap_dada": "Aún no se ha registrado nada hoy."
@@ -35,10 +35,10 @@ traduccions = {
     "Română": {
         "titol": "🟣 Controlul Maracuja - Mirna",
         "menu_entrada": "Înregistrare intrare",
-        "menu_volcat": "Răsturnare / Prelucrare",
-        "hui": "📋 Înregistrări de astăzi:",
-        "enters": "Kg (Întregi)",
-        "decimals": "Kg (Zecimale)",
+        "hui": "📋 Înregistrări astăzi:",
+        "kg_label": "Greutate (Kg):",
+        "enters": "Întregi",
+        "decimals": "Zecimale",
         "botó_guardar": "💾 SALVEAZĂ INTRAREA",
         "exit": "✅ Înregistrat cu succes!",
         "cap_dada": "Nicio înregistrare astăzi."
@@ -60,16 +60,13 @@ idioma = st.sidebar.selectbox("", ["Valencià", "Castellano", "Română"])
 t = traduccions[idioma]
 
 st.title(t["titol"])
-opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], t["menu_volcat"]])
+opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], "Volcat (Pròximament)"])
 
-# FUNCIÓ PER LLEGIR NOMÉS LES ENTRADES DE HUI
 def carregar_dades_hui():
     try:
         df = pd.read_csv(URL_CSV)
         avui = datetime.now().strftime("%d/%m/%Y")
-        # Filtrem perquè només apareguen les de hui
-        df_hui = df[df['Fecha'] == avui]
-        return df_hui
+        return df[df['Fecha'] == avui]
     except:
         return pd.DataFrame()
 
@@ -78,17 +75,25 @@ if opcio == t["menu_entrada"]:
     finca_sel = st.selectbox("Finca:", list(dades_fincas.keys()))
     parcela_sel = st.selectbox("Parcel·la:", dades_fincas[finca_sel])
     
-    # --- SELECTOR DE KG TIPUS RODA (Dues columnes) ---
-    st.write(f"**{t['enters']} , {t['decimals']}**")
-    col_int, col_dec = st.columns(2)
-    with col_int:
-        kg_int = st.number_input(t["enters"], min_value=0, max_value=5000, value=0, step=1)
-    with col_dec:
-        kg_dec = st.number_input(t["decimals"], min_value=0, max_value=99, value=0, step=1)
+    st.markdown(f"### {t['kg_label']}")
     
-    kg_total = float(f"{kg_int}.{kg_dec:02d}")
+    # --- LES RODES (ROLLERS) ---
+    col_r1, col_r2 = st.columns(2)
+    
+    with col_r1:
+        # Roda per als enters (0 a 1000)
+        kg_enters = st.selectbox(t["enters"], options=list(range(1001)), index=0)
+    
+    with col_r2:
+        # Roda per als decimals (00 a 99)
+        llista_decimals = [f"{i:02d}" for i in range(100)]
+        kg_dec_text = st.selectbox(t["decimals"], options=llista_decimals, index=0)
+    
+    # Combinem el valor
+    kg_total = float(f"{kg_enters}.{kg_dec_text}")
+    st.info(f"📍 **{kg_enters},{kg_dec_text} Kg**")
 
-    with st.form("form_entrada", clear_on_submit=True):
+    with st.form("form_final"):
         cajas = st.number_input("Cajas:", min_value=0, step=1)
         submit = st.form_submit_button(t["botó_guardar"])
         
@@ -108,19 +113,15 @@ if opcio == t["menu_entrada"]:
                 if "Success" in res.text:
                     st.success(t["exit"])
                     st.balloons()
-                    st.rerun() # Recarreguem per veure la dada a la taula de baix
+                    st.rerun()
                 else: st.error(f"Error: {res.text}")
             except Exception as e: st.error(f"Error: {e}")
 
-    # --- TAULA D'ENTRADES DE HUI ---
+    # --- TAULA DE HUI ---
     st.divider()
     st.subheader(t["hui"])
     df_hui = carregar_dades_hui()
     if not df_hui.empty:
-        # Mostrem les columnes més importants de les entrades de hui
-        st.dataframe(df_hui[['Finca', 'Parcela', 'Kg', 'Tipo']].iloc[::-1], use_container_width=True)
+        st.dataframe(df_hui[['Finca', 'Parcela', 'Kg', 'Cajas']].iloc[::-1], use_container_width=True)
     else:
         st.info(t["cap_dada"])
-
-else:
-    st.info("Secció de Volcat disponible en breu.")
