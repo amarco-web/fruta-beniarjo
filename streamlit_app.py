@@ -2,12 +2,13 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+import time
 
-# 1. CONFIGURACIÓ I URLS (URL exacta de la teua foto)
+# 1. CONFIGURACIÓ I URLS
 URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbxwgSEzm3LBQ-ss2Ps_xuf6-MAUzSuYaKLt3WLoXfDhOW0SxWRfXbFu1JMRzxVSIQ/exec"
 URL_CSV = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSxiCwg9zaAyTeQjLstotGOHcAq4lSZdPwwlzRIdoKYbePXt7zBZP5MlH5DLhCqHh3kTLyMavOLWexq/pub?gid=0&single=true&output=csv"
 
-# 2. TRADUCCIONS COMPLETES (Sense barreges)
+# 2. TRADUCCIONS
 traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
@@ -19,7 +20,7 @@ traduccions = {
         "afegeix": "➕ AFEGIR PESADA", "net_total": "Pes Net Total Lot", "botó_guardar": "💾 GUARDAR EN SHEET",
         "tria_lot": "Selecciona el Lot a bolcar:", "disponible": "Disponible en cambra:",
         "n_caps_volcar": "Quantes caixes vas a bolcar?", "botó_volcar": "💾 REGISTRAR VOLCAT",
-        "recomenat": "Pes net suggerit:", "hui": "📋 Registre de hui:", "exit": "✅ Registrat correctament!"
+        "recomenat": "Pes net suggerit:", "hui": "📋 Registre de hui:", "actualitzar": "🔄 ACTUALITZAR DADES"
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
@@ -31,7 +32,7 @@ traduccions = {
         "afegeix": "➕ AÑADIR PESADA", "net_total": "Peso Neto Total Lote", "botó_guardar": "💾 GUARDAR EN SHEET",
         "tria_lot": "Selecciona el Lote a volcar:", "disponible": "Disponible en cámara:",
         "n_caps_volcar": "¿Cuántas cajas vas a volcar?", "botó_volcar": "💾 REGISTRAR VOLCADO",
-        "recomenat": "Peso neto sugerido:", "hui": "📋 Registro de hoy:", "exit": "✅ ¡Registrado correctamente!"
+        "recomenat": "Peso neto sugerido:", "hui": "📋 Registro de hoy:", "actualitzar": "🔄 ACTUALIZAR DATOS"
     },
     "Română": {
         "titol": "🟣 Control Maracuja - Mirna",
@@ -43,32 +44,39 @@ traduccions = {
         "afegeix": "➕ ADAUGĂ CÂNTĂRIRE", "net_total": "Greutate Netă Totală Lot", "botó_guardar": "💾 SALVEAZĂ ÎN SHEET",
         "tria_lot": "Selectați lotul:", "disponible": "Disponibil în depozit:",
         "n_caps_volcar": "Câte lăzi răsturnați?", "botó_volcar": "💾 ÎNREGISTREAZĂ DESCĂRCAREA",
-        "recomenat": "Greutate netă sugerată:", "hui": "📋 Înregistrări astăzi:", "exit": "✅ Înregistrat cu succes!"
+        "recomenat": "Greutate netă sugerată:", "hui": "📋 Înregistrări astăzi:", "actualitzar": "🔄 ACTUALIZARE DATE"
     }
 }
 
-# 3. CONFIGURACIÓ PÀGINA I ESTILS
+# 3. CONFIGURACIÓ
 st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
-st.markdown("""<style>.stSlider [data-baseweb="slider"] [role="slider"] {width: 40px; height: 40px; background-color: #5D3FD3; border: 2px solid white;} div[data-testid="stThumbValue"] {font-size: 20px !important; font-weight: bold; color: white; background-color: #5D3FD3; padding: 5px; border-radius: 8px;}</style>""", unsafe_allow_html=True)
 
 if 'llista_pesades' not in st.session_state: st.session_state.llista_pesades = []
 
-# BARRA LATERAL (SELECTOR D'IDIOMA)
 st.sidebar.title("🌍 Idioma / Limbă")
 idioma = st.sidebar.selectbox("", ["Valencià", "Castellano", "Română"])
 t = traduccions[idioma]
 
+if st.sidebar.button(t["actualitzar"]):
+    st.cache_data.clear()
+    st.rerun()
+
 st.title(t["titol"])
 opcio = st.sidebar.radio("Navegació", [t["menu_entrada"], t["menu_volcat"]])
 
-# FUNCIÓ LLEGIR DADES
+# FUNCIÓ LLEGIR DADES AMB CACHE-BUSTER (Evita retards de Google)
+@st.cache_data(ttl=10) # Només guarda la dada 10 segons
 def carregar_tot():
     try:
-        df = pd.read_csv(URL_CSV)
+        # Afegim un número aleatori al final de la URL perquè Google no ens done una versió vella
+        url_fresca = f"{URL_CSV}&t={time.time()}"
+        df = pd.read_csv(url_fresca)
         if 'Kg' in df.columns:
+            # Netegem els kg per si venen amb coma
             df['Kg'] = df['Kg'].astype(str).str.replace(',', '.').astype(float)
         return df
-    except: return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame()
 
 df_total = carregar_tot()
 
@@ -105,7 +113,7 @@ if opcio == t["menu_entrada"]:
             d = {"Fecha": datetime.now().strftime("%d/%m/%Y"), "Finca": f_sel, "Parcela": p_sel, "Tipo": "Campo", "Kg": str(t_net).replace('.', ','), "Cajas": int(t_caps), "ID_Lote": f"{datetime.now().strftime('%Y%m%d')}-{f_sel[:3].upper()}", "Ref_Original": ""}
             res = requests.post(URL_APPS_SCRIPT, json=d)
             if "Success" in res.text:
-                st.success(t["exit"]); st.session_state.llista_pesades = []; st.balloons(); st.rerun()
+                st.success("✅ OK!"); st.session_state.llista_pesades = []; st.balloons(); st.cache_data.clear(); st.rerun()
 
 # --- SECCIÓ 2: VOLCAT ---
 elif opcio == t["menu_volcat"]:
@@ -116,23 +124,26 @@ elif opcio == t["menu_volcat"]:
         stk = pd.merge(ent, eix, left_on='ID_Lote', right_on='Ref_Original', how='left', suffixes=('_in', '_out')).fillna(0)
         stk['Kg_N'] = stk['Kg_in'] - stk['Kg_out']
         stk['Cap_N'] = stk['Cajas_in'] - stk['Cajas_out']
-        dispo = stk[stk['Kg_N'] > 0.5]
+        dispo = stk[stk['Kg_N'] > 0.1] # Umbral de 100 grams
         if not dispo.empty:
-            dispo['Lab'] = dispo['ID_Lote'] + " | " + dispo['Finca']
+            dispo['Lab'] = dispo['ID_Lote'] + " | " + dispo['Finca'] + " (" + dispo['Kg_N'].round(2).astype(str) + "kg)"
             l_sel = st.selectbox(t["tria_lot"], dispo['Lab'])
             d_l = dispo[dispo['Lab'] == l_sel].iloc[0]
             st.metric(t["disponible"], f"{round(d_l['Kg_N'], 2)} Kg", f"{int(d_l['Cap_N'])} Capses")
             with st.form("f_v"):
-                v_c = st.number_input(t["n_caps_volcar"], min_value=1, max_value=int(d_l['Cap_N']), value=1)
-                v_p = round(v_c * (d_l['Kg_in'] / d_l['Cajas_in']), 2)
+                v_c = st.number_input(t["n_caps_volcar"], min_value=1, max_value=int(d_l['Cap_N']) if d_l['Cap_N'] > 0 else 1, value=1)
+                mitjana = d_l['Kg_in'] / d_l['Cajas_in'] if d_l['Cajas_in'] > 0 else 0
+                v_p = round(v_c * mitjana, 2)
                 st.write(f"💡 {t['recomenat']} {v_p} Kg")
                 v_real = st.number_input("Kg reals:", value=float(v_p))
                 if st.form_submit_button(t["botó_volcar"]):
-                    dv = {"Fecha": datetime.now().strftime("%d/%m/%Y"), "Finca": d_l['Finca'], "Tipo": "Recogido", "Kg": str(round(v_real, 2)).replace('.', ','), "Cajas": int(v_c), "ID_Lote": f"V-{datetime.now().strftime('%M%S')}", "Ref_Original": d_l['ID_Lote']}
-                    if "Success" in requests.post(URL_APPS_SCRIPT, json=dv).text: st.success(t["exit"]); st.rerun()
-        else: st.warning("Buit")
+                    dv = {"Fecha": datetime.now().strftime("%d/%m/%Y"), "Finca": d_l['Finca'], "Parcela": "VOLCAT", "Tipo": "Recogido", "Kg": str(round(v_real, 2)).replace('.', ','), "Cajas": int(v_c), "ID_Lote": f"V-{datetime.now().strftime('%M%S')}", "Ref_Original": d_l['ID_Lote']}
+                    if "Success" in requests.post(URL_APPS_SCRIPT, json=dv).text: 
+                        st.success("✅ OK!"); st.cache_data.clear(); st.rerun()
+        else: st.warning("No hi ha fruita a la cambra disponible.")
+    else: st.info("Sense dades en el registre.")
 
-# --- HISTORIAL HUI (A BAIX DE TOT) ---
+# --- HISTORIAL HUI ---
 try:
     df_h = df_total[df_total['Fecha'] == datetime.now().strftime("%d/%m/%Y")]
     if not df_h.empty:
