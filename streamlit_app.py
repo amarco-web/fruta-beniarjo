@@ -8,19 +8,37 @@ URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbxwgSEzm3LBQ-ss2Ps_xu
 SHEET_ID = "1W2f64UXUzdRB2Ib-oVQH2D_hJURiQALGz_XNdUF95zE"
 URL_CSV = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=0"
 
-# 2. ESTIL CSS (Bola del cursor gegant per a mòbil)
+# 2. ESTIL CSS AVANÇAT (Bola gegant + número flotant gran)
 st.markdown("""
     <style>
+    /* Fer la bola del cursor molt gran */
     .stSlider [data-baseweb="slider"] [role="slider"] {
         width: 45px !important;
         height: 45px !important;
         background-color: #5D3FD3 !important;
         border: 3px solid white !important;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
     }
-    .stSlider [data-baseweb="slider"] [role="slider"] > div {
-        font-size: 22px !important;
-        font-weight: bold;
-        color: white;
+    
+    /* Forçar que el número de dalt de la bola siga gran i visible */
+    div[data-testid="stThumbValue"] {
+        font-size: 24px !important;
+        font-weight: bold !important;
+        color: #ffffff !important;
+        background-color: #5D3FD3 !important;
+        padding: 5px 10px !important;
+        border-radius: 10px !important;
+        top: -50px !important;
+    }
+    
+    /* Estil per al visor digital */
+    .visor-digital {
+        background-color: #f0f2f6;
+        padding: 15px;
+        border-radius: 15px;
+        text-align: center;
+        border: 3px solid #5D3FD3;
+        margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -74,7 +92,6 @@ traduccions = {
 # 4. CONFIGURACIÓ PÀGINA
 st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
 
-# DADES FINQUES
 dades_fincas = {
     "Cooperativa": ["Eloy", "Santi", "Toni", "Neus", "Jesus"],
     "Tarraso": ["Alvocat", "Germana Cando", "Dalt Casa", "Casa"],
@@ -82,7 +99,6 @@ dades_fincas = {
     "Marapego": ["Lanelate", "Murcott", "Ortanique"]
 }
 
-# MEMÒRIA TEMPORAL
 if 'llista_pesades' not in st.session_state:
     st.session_state.llista_pesades = []
 
@@ -94,7 +110,6 @@ t = traduccions[idioma]
 st.title(t["titol"])
 opcio = st.sidebar.radio("Navegació", [t["menu_entrada"], t["menu_volcat"]])
 
-# --- SECCIÓ 1: ENTRADA ---
 if opcio == t["menu_entrada"]:
     finca_sel = st.selectbox("Finca:", list(dades_fincas.keys()))
     parcela_sel = st.selectbox("Parcel·la:", dades_fincas[finca_sel])
@@ -111,8 +126,9 @@ if opcio == t["menu_entrada"]:
     dec_s = st.slider("Decimals", 0, 99, 0, step=1)
     pes_brut = float(f"{kg_s}.{dec_s:02d}")
 
+    # Visor Digital
     st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 15px; border-radius: 15px; text-align: center; border: 3px solid #5D3FD3;">
+        <div class="visor-digital">
             <h1 style="color: #5D3FD3; font-family: monospace; font-size: 80px; margin: 0;">
                 {kg_s}<span style="font-size: 40px;">,{dec_s:02d}</span> <span style="font-size: 25px;">Kg</span>
             </h1>
@@ -126,19 +142,16 @@ if opcio == t["menu_entrada"]:
     v_n_palets = col_q2.number_input(t["n_palets"], value=1, min_value=0)
 
     if st.button(t["afegeix"], type="secondary", use_container_width=True):
-        tara_total_pesada = (v_n_caixes * v_tara_caixa) + (v_n_palets * v_tara_palet)
-        pes_net_pesada = round(pes_brut - tara_total_pesada, 2)
-        st.session_state.llista_pesades.append({
-            "net": pes_net_pesada,
-            "caixes": v_n_caixes
-        })
+        tara_tot = (v_n_caixes * v_tara_caixa) + (v_n_palets * v_tara_palet)
+        pes_net = round(pes_brut - tara_tot, 2)
+        st.session_state.llista_pesades.append({"net": pes_net, "caixes": v_n_caixes})
 
     if st.session_state.llista_pesades:
         st.divider()
-        total_net = sum(p['net'] for p in st.session_state.llista_pesades)
-        total_caixes = sum(p['caixes'] for p in st.session_state.llista_pesades)
+        total_n = sum(p['net'] for p in st.session_state.llista_pesades)
+        total_c = sum(p['caixes'] for p in st.session_state.llista_pesades)
         st.markdown(f"### 🏁 {t['net_total']}")
-        st.metric(label="", value=f"{round(total_net, 2)} Kg NETS", delta=f"{total_caixes} Caixes")
+        st.metric(label="", value=f"{round(total_n, 2)} Kg NETS", delta=f"{total_c} Caixes")
 
         c_b1, c_b2 = st.columns(2)
         if c_b1.button("🗑️ REINICIAR"):
@@ -148,8 +161,8 @@ if opcio == t["menu_entrada"]:
             dades = {
                 "Fecha": datetime.now().strftime("%d/%m/%Y"),
                 "Finca": finca_sel, "Parcela": parcela_sel, "Tipo": "Campo",
-                "Kg": str(round(total_net, 2)).replace('.', ','),
-                "Cajas": int(total_caixes),
+                "Kg": str(round(total_n, 2)).replace('.', ','),
+                "Cajas": int(total_c),
                 "ID_Lote": f"{datetime.now().strftime('%Y%m%d')}-{finca_sel[:3].upper()}",
                 "Ref_Original": ""
             }
@@ -162,10 +175,10 @@ if opcio == t["menu_entrada"]:
                     st.rerun()
             except: st.error("Error")
 
-# --- HISTORIAL ---
 elif opcio == t["menu_volcat"]:
     st.info("Secció de volcat pròximament...")
 
+# HISTORIAL
 try:
     df = pd.read_csv(URL_CSV)
     df_hui = df[df['Fecha'] == datetime.now().strftime("%d/%m/%Y")]
