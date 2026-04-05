@@ -13,35 +13,44 @@ traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
         "menu_entrada": "Registrar Entrada Camp",
-        "hui": "📋 Entrades de hui:",
-        "kg_label": "Pes total (Kg):",
-        "enters": "Enters",
-        "decimals": "Decimals",
-        "botó_guardar": "💾 GUARDAR ENTRADA",
-        "exit": "✅ Registrat correctament!",
-        "cap_dada": "Encara no s'ha registrat res hui."
+        "pesades": "Pesades acumulades",
+        "tara_caixa": "Tara Caixa (kg)",
+        "tara_palet": "Tara Palet (kg)",
+        "brut": "Pes Brut",
+        "net": "Pes Net Total",
+        "afegeix": "➕ AFEGIR PESADA",
+        "borrar_tot": "🗑️ REINICIAR",
+        "botó_guardar": "💾 GUARDAR EN SHEET",
+        "exit": "✅ Enviat al Google Sheets!",
+        "hui": "📋 Registre de hui:"
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
         "menu_entrada": "Registrar Entrada Campo",
-        "hui": "📋 Entradas de hoy:",
-        "kg_label": "Peso total (Kg):",
-        "enters": "Enteros",
-        "decimals": "Decimales",
-        "botó_guardar": "💾 GUARDAR ENTRADA",
-        "exit": "✅ ¡Registrado correctamente!",
-        "cap_dada": "Aún no se ha registrado nada hoy."
+        "pesades": "Pesadas acumuladas",
+        "tara_caixa": "Tara Caja (kg)",
+        "tara_palet": "Tara Palet (kg)",
+        "brut": "Peso Bruto",
+        "net": "Peso Neto Total",
+        "afegeix": "➕ AÑADIR PESADA",
+        "borrar_tot": "🗑️ REINICIAR",
+        "botó_guardar": "💾 GUARDAR EN SHEET",
+        "exit": "✅ ¡Enviado al Google Sheets!",
+        "hui": "📋 Registro de hoy:"
     },
     "Română": {
         "titol": "🟣 Controlul Maracuja - Mirna",
         "menu_entrada": "Înregistrare intrare",
-        "hui": "📋 Înregistrări astăzi:",
-        "kg_label": "Greutate (Kg):",
-        "enters": "Întregi",
-        "decimals": "Zecimale",
-        "botó_guardar": "💾 SALVEAZĂ INTRAREA",
-        "exit": "✅ Înregistrat cu succes!",
-        "cap_dada": "Nicio înregistrare astăzi."
+        "pesades": "Cântăriri acumulate",
+        "tara_caixa": "Tara Lada (kg)",
+        "tara_palet": "Tara Palet (kg)",
+        "brut": "Greutate Brută",
+        "net": "Greutate Netă Totală",
+        "afegeix": "➕ ADAUGĂ CÂNTĂRIRE",
+        "borrar_tot": "🗑️ RESTART",
+        "botó_guardar": "💾 SALVEAZĂ ÎN SHEET",
+        "exit": "✅ Trimis cu succes!",
+        "hui": "📋 Înregistrări astăzi:"
     }
 }
 
@@ -54,57 +63,79 @@ dades_fincas = {
 
 st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
 
-# SELECTOR D'IDIOMA
+# --- GESTIÓ DE MEMÒRIA TEMPORAL (Llista de pesades) ---
+if 'llista_pesades' not in st.session_state:
+    st.session_state.llista_pesades = []
+
 st.sidebar.title("🌍 Idioma / Limbă")
 idioma = st.sidebar.selectbox("", ["Valencià", "Castellano", "Română"])
 t = traduccions[idioma]
 
 st.title(t["titol"])
-opcio = st.sidebar.radio("Navegació:", [t["menu_entrada"], "Volcat (Pròximament)"])
-
-def carregar_dades_hui():
-    try:
-        df = pd.read_csv(URL_CSV)
-        avui = datetime.now().strftime("%d/%m/%Y")
-        return df[df['Fecha'] == avui]
-    except:
-        return pd.DataFrame()
+opcio = st.sidebar.radio("Menu", [t["menu_entrada"], "Volcat (Pròximament)"])
 
 if opcio == t["menu_entrada"]:
-    st.header(t["menu_entrada"])
     finca_sel = st.selectbox("Finca:", list(dades_fincas.keys()))
     parcela_sel = st.selectbox("Parcel·la:", dades_fincas[finca_sel])
     
-    st.markdown(f"### {t['kg_label']}")
+    st.divider()
     
-    # --- LES RODES (ROLLERS) ---
-    col_r1, col_r2 = st.columns(2)
-    
-    with col_r1:
-        # Roda per als enters (0 a 1000)
-        kg_enters = st.selectbox(t["enters"], options=list(range(1001)), index=0)
-    
-    with col_r2:
-        # Roda per als decimals (00 a 99)
-        llista_decimals = [f"{i:02d}" for i in range(100)]
-        kg_dec_text = st.selectbox(t["decimals"], options=llista_decimals, index=0)
-    
-    # Combinem el valor
-    kg_total = float(f"{kg_enters}.{kg_dec_text}")
-    st.info(f"📍 **{kg_enters},{kg_dec_text} Kg**")
+    # --- CONFIGURACIÓ DE TARA ---
+    col_t1, col_t2, col_t3 = st.columns(3)
+    tara_c = col_t1.number_input(t["tara_caixa"], value=0.5, step=0.05)
+    n_palets = col_t2.number_input("Nº Palets", value=1, step=1)
+    tara_p = col_t3.number_input(t["tara_palet"], value=15.0, step=0.5)
 
-    with st.form("form_final"):
-        cajas = st.number_input("Cajas:", min_value=0, step=1)
-        submit = st.form_submit_button(t["botó_guardar"])
+    st.divider()
+
+    # --- SECTOR PESADA (ROLLER ESTRET) ---
+    st.write(f"### {t['brut']}")
+    c1, c2, c3 = st.columns([2, 1, 2])
+    with c1:
+        kg_ent = st.selectbox("Kg", options=list(range(1001)), index=0, key="ent")
+    with c2:
+        st.markdown("<h2 style='text-align: center; margin-top: 25px;'>,</h2>", unsafe_allow_html=True)
+    with c3:
+        kg_dec = st.selectbox("Dec", options=[f"{i:02d}" for i in range(100)], index=0, key="dec")
+    
+    pes_brut_actual = float(f"{kg_ent}.{kg_dec}")
+    num_caps_pesada = st.number_input("Nº Capses d'aquesta pesada", value=1, step=1)
+
+    if st.button(t["afegeix"], use_container_width=True):
+        st.session_state.llista_pesades.append({
+            "brut": pes_brut_actual,
+            "caps": num_caps_pesada
+        })
+
+    # --- LLISTA DE PESADES ACUMULADES ---
+    if st.session_state.llista_pesades:
+        st.write(f"#### {t['pesades']}")
+        total_brut = 0
+        total_caps = 0
+        for i, p in enumerate(st.session_state.llista_pesades):
+            st.write(f"{i+1}. {p['brut']} kg ({p['caps']} caps.)")
+            total_brut += p['brut']
+            total_caps += p['caps']
         
-        if submit:
+        # CÀLCUL NET
+        pes_tara_total = (total_caps * tara_c) + (n_palets * tara_p)
+        pes_net_final = round(total_brut - pes_tara_total, 2)
+        
+        st.metric(label=t["net"], value=f"{pes_net_final} Kg", delta=f"Tara: {round(pes_tara_total,2)} kg", delta_color="inverse")
+
+        col_acc1, col_acc2 = st.columns(2)
+        if col_acc1.button(t["borrar_tot"], use_container_width=True):
+            st.session_state.llista_pesades = []
+            st.rerun()
+
+        if col_acc2.button(t["botó_guardar"], type="primary", use_container_width=True):
             dades = {
                 "Fecha": datetime.now().strftime("%d/%m/%Y"),
                 "Finca": finca_sel,
                 "Parcela": parcela_sel,
                 "Tipo": "Campo",
-                "Kg": str(kg_total).replace('.', ','),
-                "Cajas": int(cajas),
+                "Kg": str(pes_net_final).replace('.', ','),
+                "Cajas": int(total_caps),
                 "ID_Lote": f"{datetime.now().strftime('%Y%m%d')}-{finca_sel[:3].upper()}",
                 "Ref_Original": ""
             }
@@ -112,16 +143,21 @@ if opcio == t["menu_entrada"]:
                 res = requests.post(URL_APPS_SCRIPT, json=dades)
                 if "Success" in res.text:
                     st.success(t["exit"])
+                    st.session_state.llista_pesades = []
                     st.balloons()
+                    st.sleep(2)
                     st.rerun()
-                else: st.error(f"Error: {res.text}")
-            except Exception as e: st.error(f"Error: {e}")
+            except:
+                st.error("Error de connexió")
 
-    # --- TAULA DE HUI ---
+    # --- HISTORIAL DE HUI (LLEGIR CSV) ---
     st.divider()
-    st.subheader(t["hui"])
-    df_hui = carregar_dades_hui()
-    if not df_hui.empty:
-        st.dataframe(df_hui[['Finca', 'Parcela', 'Kg', 'Cajas']].iloc[::-1], use_container_width=True)
-    else:
-        st.info(t["cap_dada"])
+    try:
+        df = pd.read_csv(URL_CSV)
+        avui = datetime.now().strftime("%d/%m/%Y")
+        df_hui = df[df['Fecha'] == avui]
+        if not df_hui.empty:
+            st.subheader(t["hui"])
+            st.dataframe(df_hui[['Finca', 'Parcela', 'Kg', 'Cajas']].iloc[::-1], use_container_width=True)
+    except:
+        pass
