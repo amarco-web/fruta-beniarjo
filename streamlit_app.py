@@ -12,20 +12,20 @@ traduccions = {
     "Valencià": {
         "titol": "🟣 Control Maracuia - Mirna",
         "menu_entrada": "📥 Entrada Camp", "menu_volcat": "🚜 Volcat / Confecció",
-        "brut": "Pes Brut de la Pesada", "afegeix": "➕ AFEGIR PESADA (NETA)",
-        "net_total": "Pes Net Total Lot", "botó_guardar": "💾 GUARDAR EN SHEET",
-        "tria_lot": "Selecciona el Lot de CAMP a bolcar:", "dispo": "Disponible en cambra:",
-        "n_caps_volcar": "Quantes caixes vas a bolcar?", "botó_volcar": "💾 EXECUTAR VOLCAT I RECOLLIDA",
-        "hui": "📋 Registres recents (🗑️ per esborrar):"
+        "tara_caixa": "Tara Caixa (kg)", "tara_palet": "Tara Palet (kg)",
+        "brut": "Pes Brut de la Pesada", "n_caps": "Nº Caixes", "n_palets": "Nº Palets",
+        "afegeix": "➕ AFEGIR PESADA (NETA)", "net_total": "Pes Net Total Lot", "botó_guardar": "💾 GUARDAR EN SHEET",
+        "tria_lot": "Lot de CAMP a bolcar:", "dispo": "Disponible:", "n_caps_volcar": "Caixes a bolcar?",
+        "botó_volcar": "💾 EXECUTAR VOLCAT I RECOLLIDA", "hui": "📋 Registres recents (🗑️ esborrar):"
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
         "menu_entrada": "📥 Entrada Campo", "menu_volcat": "🚜 Volcado / Confección",
-        "brut": "Peso Bruto de la Pesada", "afegeix": "➕ AÑADIR PESADA (NETA)",
-        "net_total": "Peso Neto Total Lote", "botó_guardar": "💾 GUARDAR EN SHEET",
-        "tria_lot": "Selecciona el Lote de CAMPO a volcar:", "dispo": "Disponible en cámara:",
-        "n_caps_volcar": "¿Cuántas cajas vas a volcar?", "botó_volcar": "💾 EJECUTAR VOLCADO Y RECOGIDA",
-        "hui": "📋 Registros recientes (🗑️ para borrar):"
+        "tara_caixa": "Tara Caja (kg)", "tara_palet": "Tara Palet (kg)",
+        "brut": "Peso Bruto", "n_caps": "Nº Cajas", "n_palets": "Nº Palets",
+        "afegeix": "➕ AÑADIR PESADA (NETA)", "net_total": "Peso Neto Total Lote", "botó_guardar": "💾 GUARDAR EN SHEET",
+        "tria_lot": "Lote de CAMPO a volcar:", "dispo": "Disponible:", "n_caps_volcar": "¿Cajas a volcar?",
+        "botó_volcar": "💾 EJECUTAR VOLCADO Y RECOGIDA", "hui": "📋 Registros recientes (🗑️ borrar):"
     }
 }
 
@@ -37,18 +37,21 @@ st.sidebar.title("🌍 Idioma")
 idioma = st.sidebar.selectbox("", ["Valencià", "Castellano"])
 t = traduccions[idioma]
 
-# FUNCIÓ PER OBTINDRE LA DATA CORRECTA (Forçar hora local Espanya aproximada)
 def data_hui():
+    # Forcem la data d'Espanya (+2 hores sobre UTC)
     return (datetime.utcnow() + timedelta(hours=2)).strftime("%d/%m/%Y")
 
-# LLEGIR DADES
 @st.cache_data(ttl=2)
 def carregar_dades():
     try:
         res = requests.get(f"{URL_APPS_SCRIPT}?cache={time.time()}")
-        df = pd.DataFrame(res.json()[1:], columns=res.json()[0])
-        df['Kg'] = pd.to_numeric(df['Kg'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-        df['Cajas'] = pd.to_numeric(df['Cajas'], errors='coerce').fillna(0)
+        json_data = res.json()
+        df = pd.DataFrame(json_data[1:], columns=json_data[0])
+        # NETEJA DE COLUMNES I DADES
+        df.columns = df.columns.str.strip()
+        for col in ['Kg', 'Cajas']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
         return df
     except: return pd.DataFrame()
 
@@ -62,11 +65,16 @@ if opcio == t["menu_entrada"]:
     f_sel = st.selectbox("Finca:", list(fincas.keys()))
     p_sel = st.selectbox("Parcel·la:", fincas[f_sel])
 
-    # [Codi de cursors i tares...]
+    col1, col2 = st.columns(2)
+    v_tc = col1.number_input(t["tara_caixa"], 0.50); v_tp = col2.number_input(t["tara_palet"], 15.0)
+    
+    st.markdown(f"### ⚖️ {t['brut']}")
     kg_s = st.slider("Kg", 0, 1000, 0); dec_s = st.slider("Decimals", 0, 99, 0)
     p_brut = float(f"{kg_s}.{dec_s:02d}")
-    v_tc = st.number_input("Tara Caixa", 0.50); v_tp = st.number_input("Tara Palet", 15.0)
-    v_nc = st.number_input("Nº Caixes", 1); v_np = st.number_input("Nº Palets", 1)
+    st.markdown(f"""<div style="background-color:#f0f2f6;padding:15px;border-radius:15px;text-align:center;border:3px solid #5D3FD3;"><h1>{kg_s},{dec_s:02d} Kg</h1></div>""", unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    v_nc = c1.number_input(t["n_caps"], 1); v_np = c2.number_input(t["n_palets"], 1)
 
     if st.button(t["afegeix"], use_container_width=True):
         t_n = round(p_brut - ((v_nc * v_tc) + (v_np * v_tp)), 2)
@@ -87,46 +95,45 @@ if opcio == t["menu_entrada"]:
     if not df_total.empty:
         for i, r in df_total.tail(10).iloc[::-1].iterrows():
             c1, c2 = st.columns([4, 1])
-            c1.write(f"📅 {r['Fecha']} | {r['Finca']} | **{r['Kg']}kg** ({r['Tipo']})")
+            data_v = str(r['Fecha']).split('T')[0]
+            c1.write(f"📅 {data_v} | {r['Finca']} | **{r['Kg']}kg** ({r['Tipo']})")
             if c2.button("🗑️", key=f"del_{i}_{r['ID_Lote']}"):
                 requests.post(URL_APPS_SCRIPT, json={"action": "delete", "id_lote": r['ID_Lote']})
                 st.cache_data.clear(); st.rerun()
 
-# --- SECCIÓ 2: VOLCAT (CORREGIT) ---
+# --- SECCIÓ 2: VOLCAT ---
 elif opcio == t["menu_volcat"]:
     st.header(t["menu_volcat"])
-    if not df_total.empty:
-        # Stock de cambra = Campo - Volcado
-        ent = df_total[df_total['Tipo'] == 'Campo'].groupby('ID_Lote').agg({'Kg':'sum','Cajas':'sum','Finca':'first','Parcela':'first'}).reset_index()
-        # Molt important: Ara restem els que posa "Volcado"
-        eix = df_total[df_total['Tipo'] == 'Volcado'].groupby('Ref_Original').agg({'Kg':'sum','Cajas':'sum'}).reset_index()
+    if not df_total.empty and 'Tipo' in df_total.columns:
+        # Stock Cambra = Campo - Volcado
+        c_df = df_total[df_total['Tipo'] == 'Campo']
+        v_df = df_total[df_total['Tipo'] == 'Volcado']
         
-        stk = pd.merge(ent, eix, left_on='ID_Lote', right_on='Ref_Original', how='left', suffixes=('_in','_out')).fillna(0)
-        stk['Kg_N'] = stk['Kg_in'] - stk['Kg_out']
-        stk['Cap_N'] = stk['Cajas_in'] - stk['Cajas_out']
-        dispo = stk[stk['Kg_N'] > 0.1]
-        
-        if not dispo.empty:
-            dispo['Lab'] = dispo['ID_Lote'].str[-6:] + " | " + dispo['Finca'] + " (" + dispo['Kg_N'].astype(str) + "kg)"
-            l_s = st.selectbox(t["tria_lot"], dispo['Lab'])
-            d_l = dispo[dispo['Lab'] == l_s].iloc[0]
+        if not c_df.empty:
+            ent = c_df.groupby('ID_Lote').agg({'Kg':'sum','Cajas':'sum','Finca':'first'}).reset_index()
+            eix = v_df.groupby('Ref_Original').agg({'Kg':'sum','Cajas':'sum'}).reset_index()
+            stk = pd.merge(ent, eix, left_on='ID_Lote', right_on='Ref_Original', how='left', suffixes=('_in','_out')).fillna(0)
+            stk['Kg_N'] = stk['Kg_in'] - stk['Kg_out']
+            stk['Cap_N'] = stk['Cajas_in'] - stk['Cajas_out']
+            dispo = stk[stk['Kg_N'] > 0.1]
             
-            st.metric(t["disponible"], f"{round(d_l['Kg_N'],2)} Kg", f"{int(d_l['Cap_N'])} Capses")
-            
-            with st.form("v"):
-                vc = st.number_input("Capses a bolcar", 1, int(d_l['Cap_N']) if d_l['Cap_N']>0 else 100)
-                mitjana = d_l['Kg_in']/d_l['Cajas_in'] if d_l['Cajas_in']>0 else 0
-                vr = st.number_input("Kg totals del bolcat:", value=float(round(vc * mitjana, 2)))
+            if not dispo.empty:
+                dispo['Lab'] = dispo['ID_Lote'].str[-6:] + " | " + dispo['Finca'] + " (" + dispo['Kg_N'].astype(str) + "kg)"
+                l_s = st.selectbox(t["tria_lot"], dispo['Lab'])
+                d_l = dispo[dispo['Lab'] == l_s].iloc[0]
+                st.metric(t["disponible"], f"{round(d_l['Kg_N'],2)} Kg", f"{int(d_l['Cap_N'])} Capses")
                 
-                if st.form_submit_button(t["botó_volcar"]):
-                    # 1. Creem fila de VOLCADO (per a restar stock de la cambra)
-                    d_volcat = {"Fecha": data_hui(), "Finca": d_l['Finca'], "Parcela": d_l['Parcela'], "Tipo": "Volcado", "Kg": str(round(vr,2)).replace('.',','), "Cajas": int(vc), "ID_Lote": f"VOL-{int(time.time())}", "Ref_Original": d_l['ID_Lote']}
-                    requests.post(URL_APPS_SCRIPT, json=d_volcat)
-                    
-                    # 2. Creem fila de RECOGIDO (nova entrada de fruita neta amb origen)
-                    d_recollit = {"Fecha": data_hui(), "Finca": d_l['Finca'], "Parcela": d_l['Parcela'], "Tipo": "Recogido", "Kg": str(round(vr,2)).replace('.',','), "Cajas": int(vc), "ID_Lote": f"REC-{int(time.time())}", "Ref_Original": d_l['ID_Lote']}
-                    requests.post(URL_APPS_SCRIPT, json=d_recollit)
-                    
-                    st.success("✅ Bolcat i Recollida registrats!")
-                    st.cache_data.clear(); st.rerun()
-        else: st.warning("No hi ha fruita de camp a la cambra.")
+                with st.form("v"):
+                    vc = st.number_input("Capses a bolcar", 1, int(d_l['Cap_N']) if d_l['Cap_N']>0 else 100)
+                    mitjana = d_l['Kg_in']/d_l['Cajas_in'] if d_l['Cajas_in']>0 else 0
+                    vr = st.number_input("Kg:", value=float(round(vc * mitjana, 2)))
+                    if st.form_submit_button(t["botó_volcar"]):
+                        # 1. Restem del Campo (Tipus Volcado)
+                        dv = {"Fecha": data_hui(), "Finca": d_l['Finca'], "Parcela": "PROCESO", "Tipo": "Volcado", "Kg": str(round(vr,2)).replace('.',','), "Cajas": int(vc), "ID_Lote": f"V-{int(time.time())}", "Ref_Original": d_l['ID_Lote']}
+                        requests.post(URL_APPS_SCRIPT, json=dv)
+                        # 2. Creem nova entrada (Tipus Recogido)
+                        dr = {"Fecha": data_hui(), "Finca": d_l['Finca'], "Parcela": "NETO", "Tipo": "Recogido", "Kg": str(round(vr,2)).replace('.',','), "Cajas": int(vc), "ID_Lote": f"R-{int(time.time())}", "Ref_Original": d_l['ID_Lote']}
+                        requests.post(URL_APPS_SCRIPT, json=dr)
+                        st.success("✅ Fet!"); st.cache_data.clear(); st.rerun()
+            else: st.warning("No hi ha fruit de camp disponible.")
+    else: st.info("Sense dades.")
