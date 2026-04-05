@@ -16,7 +16,7 @@ traduccions = {
         "pesades": "Pesades acumulades",
         "tara_caixa": "Tara Caixa (kg)",
         "tara_palet": "Tara Palet (kg)",
-        "brut": "Pes Brut",
+        "brut": "Pes Brut Actual",
         "net": "Pes Net Total",
         "afegeix": "➕ AFEGIR PESADA",
         "borrar_tot": "🗑️ REINICIAR",
@@ -30,7 +30,7 @@ traduccions = {
         "pesades": "Pesadas acumuladas",
         "tara_caixa": "Tara Caja (kg)",
         "tara_palet": "Tara Palet (kg)",
-        "brut": "Peso Bruto",
+        "brut": "Peso Bruto Actual",
         "net": "Peso Neto Total",
         "afegeix": "➕ AÑADIR PESADA",
         "borrar_tot": "🗑️ REINICIAR",
@@ -63,7 +63,6 @@ dades_fincas = {
 
 st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
 
-# --- GESTIÓ DE MEMÒRIA TEMPORAL (Llista de pesades) ---
 if 'llista_pesades' not in st.session_state:
     st.session_state.llista_pesades = []
 
@@ -88,47 +87,53 @@ if opcio == t["menu_entrada"]:
 
     st.divider()
 
-    # --- SECTOR PESADA (ROLLER ESTRET) ---
+    # --- SELECTORS DE CURSOR (SLIDERS) ESTIL IMATGE ---
     st.write(f"### {t['brut']}")
-    c1, c2, c3 = st.columns([2, 1, 2])
-    with c1:
-        kg_ent = st.selectbox("Kg", options=list(range(1001)), index=0, key="ent")
-    with c2:
-        st.markdown("<h2 style='text-align: center; margin-top: 25px;'>,</h2>", unsafe_allow_html=True)
-    with c3:
-        kg_dec = st.selectbox("Dec", options=[f"{i:02d}" for i in range(100)], index=0, key="dec")
     
-    pes_brut_actual = float(f"{kg_ent}.{kg_dec}")
+    # Sliders per a Kg i Decimals
+    kg_slider = st.slider("Kg", 0, 1000, 0, step=1)
+    dec_slider = st.slider("Decimals", 0, 95, 0, step=5) # Pas de 5 en 5 per a anar més ràpid
+    
+    pes_brut_actual = float(f"{kg_slider}.{dec_slider:02d}")
+    
+    # Visor digital gran
+    st.markdown(f"""
+        <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; text-align: center; border: 2px solid #5D3FD3;">
+            <h1 style="color: #5D3FD3; font-family: monospace; font-size: 60px; margin: 0;">
+                {kg_slider}<span style="font-size: 30px;">,{dec_slider:02d}</span> <span style="font-size: 20px;">Kg</span>
+            </h1>
+        </div>
+    """, unsafe_allow_html=True)
+
     num_caps_pesada = st.number_input("Nº Capses d'aquesta pesada", value=1, step=1)
 
-    if st.button(t["afegeix"], use_container_width=True):
+    if st.button(t["afegeix"], type="secondary", use_container_width=True):
         st.session_state.llista_pesades.append({
             "brut": pes_brut_actual,
             "caps": num_caps_pesada
         })
 
-    # --- LLISTA DE PESADES ACUMULADES ---
+    # --- LLISTA ACUMULADA ---
     if st.session_state.llista_pesades:
         st.write(f"#### {t['pesades']}")
         total_brut = 0
         total_caps = 0
         for i, p in enumerate(st.session_state.llista_pesades):
-            st.write(f"{i+1}. {p['brut']} kg ({p['caps']} caps.)")
+            st.write(f"⚖️ {i+1}. **{p['brut']} kg** ({p['caps']} caps.)")
             total_brut += p['brut']
             total_caps += p['caps']
         
-        # CÀLCUL NET
         pes_tara_total = (total_caps * tara_c) + (n_palets * tara_p)
         pes_net_final = round(total_brut - pes_tara_total, 2)
         
-        st.metric(label=t["net"], value=f"{pes_net_final} Kg", delta=f"Tara: {round(pes_tara_total,2)} kg", delta_color="inverse")
+        st.metric(label=t["net"], value=f"{pes_net_final} Kg", delta=f"Tara: -{round(pes_tara_total,2)} kg")
 
-        col_acc1, col_acc2 = st.columns(2)
-        if col_acc1.button(t["borrar_tot"], use_container_width=True):
+        c1, c2 = st.columns(2)
+        if c1.button(t["borrar_tot"], use_container_width=True):
             st.session_state.llista_pesades = []
             st.rerun()
 
-        if col_acc2.button(t["botó_guardar"], type="primary", use_container_width=True):
+        if c2.button(t["botó_guardar"], type="primary", use_container_width=True):
             dades = {
                 "Fecha": datetime.now().strftime("%d/%m/%Y"),
                 "Finca": finca_sel,
@@ -145,18 +150,17 @@ if opcio == t["menu_entrada"]:
                     st.success(t["exit"])
                     st.session_state.llista_pesades = []
                     st.balloons()
-                    st.sleep(2)
                     st.rerun()
             except:
-                st.error("Error de connexió")
+                st.error("Error")
 
-    # --- HISTORIAL DE HUI (LLEGIR CSV) ---
-    st.divider()
+    # --- TAULA DE HUI ---
     try:
         df = pd.read_csv(URL_CSV)
         avui = datetime.now().strftime("%d/%m/%Y")
         df_hui = df[df['Fecha'] == avui]
         if not df_hui.empty:
+            st.divider()
             st.subheader(t["hui"])
             st.dataframe(df_hui[['Finca', 'Parcela', 'Kg', 'Cajas']].iloc[::-1], use_container_width=True)
     except:
