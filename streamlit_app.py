@@ -3,8 +3,8 @@ import requests
 import pandas as pd
 from datetime import datetime
 
-# 1. URL DE L'APPS SCRIPT (Versió 4)
-URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbwD_L7gelO6AmKy4PGH8tg8ONarng2xL6e8ONZ9xr2lcdZDFNs_s9gnK_BntAnDyseE5/exec"
+# 1. URL DE L'APPS SCRIPT (Versió 3)
+URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbezps3hmJd44mDWLiaHGvDn1cvC4zqblgoYGJk1G3puGDbRu9_XP4eLGcO6FLhQvxEs/exec"
 
 # 2. TRADUCCIONS COMPLETES
 traduccions = {
@@ -17,7 +17,7 @@ traduccions = {
         "afegeix": "➕ AFEGIR PESADA (NETA)", "net_total": "Pes Net Total Lot", "botó_guardar": "💾 GUARDAR EN SHEET",
         "tria_lot": "Selecciona el Lot:", "disponible": "Disponible en cambra:",
         "n_caps_volcar": "Quantes caixes vas a bolcar?", "botó_volcar": "💾 REGISTRAR VOLCAT",
-        "recomenat": "Pes net suggerit:", "hui": "📋 Entrades de hui (🗑️ per esborrar):", "exit": "✅ Fet!"
+        "recomenat": "Pes net suggerit:", "hui": "📋 Entrades de hui (🗑️ per esborrar):", "exit": "✅ Registrat!"
     },
     "Castellano": {
         "titol": "🟣 Control Maracuyá - Mirna",
@@ -43,7 +43,7 @@ traduccions = {
     }
 }
 
-# 3. CONFIGURACIÓ I ESTIL
+# 3. ESTIL CSS (Cursors i Visor)
 st.set_page_config(page_title="Control Maracuia", page_icon="🟣", layout="centered")
 st.markdown("""<style>.stSlider [data-baseweb="slider"] [role="slider"] {width: 45px; height: 45px; background-color: #5D3FD3; border: 3px solid white;} div[data-testid="stThumbValue"] {font-size: 22px !important; font-weight: bold; color: white; background-color: #5D3FD3; padding: 5px; border-radius: 8px;}</style>""", unsafe_allow_html=True)
 
@@ -130,13 +130,14 @@ elif opcio == t["menu_volcat"]:
         stk['Cap_N'] = stk['Cajas_in'] - stk['Cajas_out']
         dispo = stk[stk['Kg_N'] > 0.1]
         if not dispo.empty:
-            dispo['Lab'] = dispo['ID_Lote'].str[:10] + " | " + dispo['Finca'] + " (" + dispo['Kg_N'].round(1).astype(str) + "kg)"
+            dispo['Lab'] = dispo['ID_Lote'].str[:8] + " | " + dispo['Finca'] + " (" + dispo['Kg_N'].round(1).astype(str) + "kg)"
             l_sel = st.selectbox(t["tria_lot"], dispo['Lab'])
             d_l = dispo[dispo['Lab'] == l_sel].iloc[0]
             st.metric(t["disponible"], f"{round(d_l['Kg_N'], 2)} Kg", f"{int(d_l['Cap_N'])} Capses")
             with st.form("f_v"):
                 v_c = st.number_input(t["n_caps_volcar"], min_value=1, max_value=int(d_l['Cap_N']) if d_l['Cap_N'] > 0 else 1, value=1)
                 v_p = round(v_c * (d_l['Kg_in'] / d_l['Cajas_in']), 2) if d_l['Cajas_in'] > 0 else 0
+                st.write(f"💡 {t['recomenat']} {v_p} Kg")
                 v_real = st.number_input("Kg:", value=float(v_p))
                 if st.form_submit_button(t["botó_volcar"]):
                     dv = {"Fecha": datetime.now().strftime("%d/%m/%Y"), "Finca": d_l['Finca'], "Parcela": d_l['Parcela'], "Tipo": "Recogido", "Kg": str(round(v_real, 2)).replace('.', ','), "Cajas": int(v_c), "ID_Lote": f"V-{datetime.now().strftime('%M%S')}", "Ref_Original": d_l['ID_Lote']}
